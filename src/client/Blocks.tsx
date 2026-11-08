@@ -10,8 +10,31 @@ import type { BlockRenderProps, ReaderBlockOwner } from './types.js';
 import { useStreamingText } from './streaming.js';
 import { MotionMarkdown, MotionPlainText } from './word-motion.js';
 import css from './Reader.module.css';
+import { fallbackFileSize, fileAttachment, fileBytes, fileName, type UserFileAttachment } from './user-file.js';
 
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+/**
+ * A user-fed file. Files never reach the model as bytes — request assembly projects every one
+ * to handle text (name, byte size, read-only saved path) — so the reading view owes the reader
+ * what the composer showed: name and size. Without this branch every fed file fell into the
+ * "此内容类型尚未接入阅读页" notice and read as an unnamed JSON blob.
+ *
+ * 2026-09-27 local port: styling stays inline so the card does not depend on a CSS-module export
+ * a future upstream rebuild would have to re-declare.
+ */
+const UserFileCard = memo(function UserFileCard({ attachment }: { attachment: UserFileAttachment }) {
+  const name = fileName(attachment);
+  const bytes = fileBytes(attachment);
+  const size = bytes === undefined ? '' : fallbackFileSize(bytes);
+  return <span data-reader-user-file title={name} style={{
+    display: 'inline-flex', alignItems: 'baseline', gap: '8px', padding: '4px 10px',
+    border: '1px solid currentColor', borderRadius: '8px', opacity: .9,
+  }}>
+    <span style={{ fontWeight: 500 }}>{name}</span>
+    {size !== '' && <span style={{ opacity: .6, fontSize: '.85em' }}>{size}</span>}
+  </span>;
+});
 
 export class BlockBoundary extends Component<{ children: ReactNode }, { failed: boolean; detail: string }> {
   state = { failed: false, detail: '' };
@@ -112,6 +135,8 @@ function fallback(block: AssistantBlock, streaming: boolean, source: ReaderBlock
     case 'reasoning': return <ReadingReasoning text={block.text} streaming={streaming} holdFormatting={holdFormatting} {...presentation} />;
     case 'tool-call': return <JsonBlock label={`工具参数 · ${block.name}`} payload={block.argsRaw} truncatedLabel={truncatedJsonLabel} />;
     case 'other': {
+      const file = fileAttachment(block);
+      if (file !== null) return <UserFileCard attachment={file} />;
       const raw = block.block;
       if (raw && typeof raw === 'object') {
         const item = raw as Record<string, unknown>;
